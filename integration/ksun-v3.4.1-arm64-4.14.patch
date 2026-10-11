@@ -717,10 +717,20 @@ index becf29d..13e2bef 100644
  #include <linux/limits.h>
  #include <linux/rculist.h>
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
-index 6336a22..35f2e77 100644
+index 6336a22..ba998ca 100644
 --- a/kernel/policy/app_profile.c
 +++ b/kernel/policy/app_profile.c
-@@ -102,7 +102,9 @@ static void disable_seccomp(void)
+@@ -64,7 +64,9 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
+     put_group_info(group_info);
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+ void seccomp_filter_release(struct task_struct *tsk);
++#endif
+ 
+ // https://cs.android.com/android/_/android/kernel/common/+/5346453405bf12d7ed6003f45dd47b71744fe1be
+ // Some 15-6.6 kernel have this backport while others don't have, e.g. Pixel 10
+@@ -102,7 +104,9 @@ static void disable_seccomp(void)
  
      current->seccomp.mode = 0;
      current->seccomp.filter = NULL;
@@ -730,6 +740,20 @@ index 6336a22..35f2e77 100644
      spin_unlock_irq(&current->sighand->siglock);
  
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+@@ -119,7 +123,13 @@ static void disable_seccomp(void)
+     fake->sighand = NULL;
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
++    /* The saved task owns the detached filter reference. Old seccomp has
++     * no separate users/cache state; release that reference using its API. */
++    put_seccomp_filter(fake);
++#else
+     seccomp_filter_release(fake);
++#endif
+     kfree(fake);
+ }
+ 
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
 index 6ee9b39..6910160 100644
 --- a/kernel/runtime/ksud_integration.c
