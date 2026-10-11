@@ -98,8 +98,13 @@ jobs:
           Tested reference build: https://github.com/$GH_REPO/actions/runs/38128218220
           Pinned stock materials: https://github.com/$GH_REPO/tree/fe57997ba9d16cda0632c559abd5753bc061ca81
           EOF
-          if gh release view "$tag" > /dev/null 2>&1; then
-            echo "Release already exists: $tag"
+          if gh release view "$tag" --json isDraft --jq .isDraft > draft-state.txt 2>/dev/null; then
+            if test "$(cat draft-state.txt)" = false; then
+              echo "Published release already exists: $tag"
+              exit 0
+            fi
+            gh release upload "$tag" release/* --clobber
           else
-            gh release create "$tag" release/* --target "$sha" --prerelease --title "hotdog LOS 23.2 / KSU-N v3.4.1 / build $BUILD_RUN_ID.$build_attempt" --notes-file notes.md
+            gh release create "$tag" release/* --target "$sha" --draft --prerelease --title "hotdog LOS 23.2 / KSU-N v3.4.1 / build $BUILD_RUN_ID.$build_attempt" --notes-file notes.md
           fi
+          gh release edit "$tag" --draft=false
