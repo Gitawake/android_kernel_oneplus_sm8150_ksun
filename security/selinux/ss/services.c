@@ -2131,7 +2131,7 @@ static int security_preserve_bools(struct selinux_state *state,
  * This function will flush the access vector cache after
  * loading the new policy.
  */
-int security_load_policy(struct selinux_state *state, void *data, size_t len)
+static int security_load_policy_locked(struct selinux_state *state, void *data, size_t len)
 {
 	struct policydb *policydb;
 	struct sidtab *oldsidtab, *newsidtab;
@@ -2900,7 +2900,7 @@ err:
 }
 
 
-int security_set_bools(struct selinux_state *state, int len, int *values)
+static int security_set_bools_locked(struct selinux_state *state, int len, int *values)
 {
 	struct policydb *policydb;
 	int i, rc;
@@ -3761,4 +3761,36 @@ int security_read_policy(struct selinux_state *state,
 	*len = (unsigned long)fp.data - (unsigned long)*data;
 	return 0;
 
+}
+
+/* KSU copies policies outside the IRQ-disabled rwlock. Native writers must
+ * participate in the same transaction lock to preserve the source lifetime. */
+#ifdef CONFIG_KSU
+DEFINE_MUTEX(ksu_selinux_policy_mutex);
+#endif
+
+int security_load_policy(struct selinux_state *state, void *data, size_t len)
+{
+ int ret;
+#ifdef CONFIG_KSU
+ mutex_lock(&ksu_selinux_policy_mutex);
+#endif
+ ret = security_load_policy_locked(state, data, len);
+#ifdef CONFIG_KSU
+ mutex_unlock(&ksu_selinux_policy_mutex);
+#endif
+ return ret;
+}
+
+int security_set_bools(struct selinux_state *state, int len, int *values)
+{
+ int ret;
+#ifdef CONFIG_KSU
+ mutex_lock(&ksu_selinux_policy_mutex);
+#endif
+ ret = security_set_bools_locked(state, len, values);
+#ifdef CONFIG_KSU
+ mutex_unlock(&ksu_selinux_policy_mutex);
+#endif
+ return ret;
 }
