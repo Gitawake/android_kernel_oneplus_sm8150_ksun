@@ -74,6 +74,8 @@ jobs:
           tar -czf release/kernel-build.tar.gz -C build artifacts
           (cd release && sha256sum * > SHA256SUMS)
       - name: Publish unique prerelease
+        env:
+          RELEASE_DEPLOY_KEY: ${{ secrets.KSUN_RELEASE_DEPLOY_KEY }}
         shell: bash
         run: |
           set -euo pipefail
@@ -85,9 +87,15 @@ jobs:
           if gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha > tag-sha.txt 2>/dev/null; then
             test "$(cat tag-sha.txt)" = "$sha"
           else
-            gh auth setup-git --hostname github.com
+            test -n "$RELEASE_DEPLOY_KEY"
+            release_key="$RUNNER_TEMP/ksun-release-key"
+            known_hosts="$RUNNER_TEMP/ksun-release-known-hosts"
+            (umask 077; printf '%s\n' "$RELEASE_DEPLOY_KEY" > "$release_key")
+            trap 'rm -f "$release_key"' EXIT
+            gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$known_hosts"
             git -C source tag "$tag" "$sha"
-            git -C source push origin "refs/tags/$tag"
+            GIT_SSH_COMMAND="ssh -i $release_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts -o StrictHostKeyChecking=yes" git -C source push "git@github.com:$GH_REPO.git" "refs/tags/$tag"
+            rm -f "$release_key"
           fi
           validation='This specific build has NOT been tested on a phone.'
           if test "$BUILD_RUN_ID" = 38128218220; then
