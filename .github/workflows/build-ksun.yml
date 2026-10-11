@@ -3,6 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [los-23.2-ksun-v3.4.1]
+concurrency:
+  group: ksun-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -36,6 +39,13 @@ jobs:
           grep -qx CONFIG_KSU=y out/.config
           grep -qx CONFIG_KPROBES=y out/.config
           grep -qx CONFIG_FTRACE_SYSCALLS=y out/.config
+      - name: Compile KernelSU port first
+        run: |
+          set -o pipefail
+          args=(O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-)
+          make -j"$(nproc)" "${args[@]}" prepare scripts
+          make -j"$(nproc)" "${args[@]}" security/selinux/
+          make -j"$(nproc)" "${args[@]}" drivers/kernelsu/ 2>&1 | tee ksun-build.log
       - name: Build kernel
         run: |
           set -o pipefail
@@ -57,5 +67,6 @@ jobs:
           path: |
             artifacts/
             build.log
+            ksun-build.log
             out/.config
           if-no-files-found: warn

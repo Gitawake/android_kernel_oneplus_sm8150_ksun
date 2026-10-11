@@ -10,6 +10,40 @@ index b9d91f8..9e7225d 100644
  
  obj-$(CONFIG_KSU) += kernelsu.o
  
+diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
+index 6934141..262afc0 100644
+--- a/kernel/feature/kernel_umount.c
++++ b/kernel/feature/kernel_umount.c
+@@ -41,6 +41,9 @@ static const struct ksu_feature_handler kernel_umount_handler = {
+ 	.set_handler = kernel_umount_feature_set,
+ };
+ 
++#include "util.h"
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+ extern int path_umount(struct path *path, int flags);
+ 
+ static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
+@@ -51,6 +54,19 @@ static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
+ 	}
+ }
+ 
++#else
++static void ksu_umount_mnt(const char *mnt, struct path *path, int flags)
++{
++    mm_segment_t old_fs = get_fs();
++    long err;
++    path_put(path);
++    set_fs(KERNEL_DS);
++    err = ksyscall(umount, (char __user *)mnt, flags);
++    set_fs(old_fs);
++    if (err) pr_info("umount %s failed: %ld\n", mnt, err);
++}
++#endif
++
+ static void try_umount(const char *mnt, int flags)
+ {
+ 	struct path path;
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
 index 6dae885..254a6e6 100644
 --- a/kernel/feature/sucompat.c
@@ -68,6 +102,63 @@ index 6dae885..254a6e6 100644
  }
  
  long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
+diff --git a/kernel/hook/arm64/patch_memory.c b/kernel/hook/arm64/patch_memory.c
+index d58f2e4..6830c9f 100644
+--- a/kernel/hook/arm64/patch_memory.c
++++ b/kernel/hook/arm64/patch_memory.c
+@@ -23,7 +23,9 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
+ {
+     struct mm_struct *mm = &init_mm;
+     pgd_t *pgd;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+     p4d_t *p4d;
++#endif
+     pud_t *pud;
+     pmd_t *pmd;
+     pte_t *pte;
+@@ -36,6 +38,11 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
+     pr_debug("pgd of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pgd,
+              (uintptr_t)pgd_val(*pgd));
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++    pud = pud_offset(pgd, addr);
++    if (pud_sect(*pud))
++        return (pud_val(*pud) & PHYS_MASK & PUD_MASK) | (addr & ~PUD_MASK);
++#else
+     p4d = p4d_offset(pgd, addr);
+     if (p4d_none(*p4d) || p4d_bad(*p4d))
+         goto fail;
+@@ -49,6 +56,7 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
+ #endif
+ 
+     pud = pud_offset(p4d, addr);
++#endif
+     if (pud_none(*pud) || pud_bad(*pud))
+         goto fail;
+     pr_debug("pud of 0x%lx p=0x%lx v=0x%lx", addr, (uintptr_t)pud,
+@@ -70,6 +78,10 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
+     }
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++    if (pmd_sect(*pmd))
++        return (pmd_val(*pmd) & PHYS_MASK & PMD_MASK) | (addr & ~PMD_MASK);
++#endif
+     if (pmd_none(*pmd) || pmd_bad(*pmd))
+         goto fail;
+ 
+@@ -79,7 +91,11 @@ unsigned long phys_from_virt(unsigned long addr, int *err)
+     if (!pte_present(*pte))
+         goto fail;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++    return (pte_val(*pte) & PHYS_MASK & PAGE_MASK) | (addr & ~PAGE_MASK);
++#else
+     return __pte_to_phys(*pte) + ((addr & ~PAGE_MASK));
++#endif
+ 
+ fail:
+     *err = -ENOENT;
 diff --git a/kernel/hook/arm64/syscall_hook.c b/kernel/hook/arm64/syscall_hook.c
 index 7bd6df0..50e98c5 100644
 --- a/kernel/hook/arm64/syscall_hook.c
@@ -228,6 +319,47 @@ index 0000000..0997bf2
 +#define copy_to_kernel_nofault probe_kernel_write
 +#endif
 +#endif
+diff --git a/kernel/include/util.h b/kernel/include/util.h
+index fd93400..35de11c 100644
+--- a/kernel/include/util.h
++++ b/kernel/include/util.h
+@@ -13,7 +13,11 @@
+ #include "arch.h"
+ 
+ #if defined(__aarch64__)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++#define KSU_SYS_PREFIX(name) sys_##name
++#else
+ #define KSU_SYS_PREFIX(name) __arm64_sys_##name
++#endif
+ #elif defined(__x86_64__)
+ #define KSU_SYS_PREFIX(name) __x64_sys_##name
+ #elif defined(__riscv)
+@@ -43,6 +47,15 @@ static_assert(1 == 0, "Unsupported architecture!");
+     })
+ 
+ // https://elixir.bootlin.com/musl/v1.2.6/source/src/internal/syscall.h#L45
++#if defined(__aarch64__) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++#define ksyscall_0(name) KSU_SYS_PREFIX(name)()
++#define ksyscall_1(name, a) KSU_SYS_PREFIX(name)(a)
++#define ksyscall_2(name, a, b) KSU_SYS_PREFIX(name)(a, b)
++#define ksyscall_3(name, a, b, c) KSU_SYS_PREFIX(name)(a, b, c)
++#define ksyscall_4(name, a, b, c, d) KSU_SYS_PREFIX(name)(a, b, c, d)
++#define ksyscall_5(name, a, b, c, d, e) KSU_SYS_PREFIX(name)(a, b, c, d, e)
++#define ksyscall_6(name, a, b, c, d, e, f) KSU_SYS_PREFIX(name)(a, b, c, d, e, f)
++#else
+ #define ksyscall_0(name) __ksyscall(name, 0, 0, 0, 0, 0, 0)
+ #define ksyscall_1(name, a) __ksyscall(name, a, 0, 0, 0, 0, 0)
+ #define ksyscall_2(name, a, b) __ksyscall(name, a, b, 0, 0, 0, 0)
+@@ -51,6 +64,8 @@ static_assert(1 == 0, "Unsupported architecture!");
+ #define ksyscall_5(name, a, b, c, d, e) __ksyscall(name, a, b, c, d, e, 0)
+ #define ksyscall_6(name, a, b, c, d, e, f) __ksyscall(name, a, b, c, d, e, f)
+ 
++#endif
++
+ #define __ksyscall_arg_n(_1, _2, _3, _4, _5, _6, _7, N, ...) N
+ #define __ksyscall_count_args(...) __ksyscall_arg_n(__VA_ARGS__, 6, 5, 4, 3, 2, 1, 0)
+ #define __ksyscall_concat(a, b) a##b
 diff --git a/kernel/infra/seccomp_cache.c b/kernel/infra/seccomp_cache.c
 index 6511066..1d118dd 100644
 --- a/kernel/infra/seccomp_cache.c
@@ -253,6 +385,38 @@ index 6511066..1d118dd 100644
 \ No newline at end of file
 +}
 +#endif
+diff --git a/kernel/infra/su_mount_ns.c b/kernel/infra/su_mount_ns.c
+index 3d0631a..f53fc9e 100644
+--- a/kernel/infra/su_mount_ns.c
++++ b/kernel/infra/su_mount_ns.c
+@@ -119,7 +119,11 @@ out:
+ // individual mode , need CAP_SYS_ADMIN to perform unshare and remount
+ static void ksu_mnt_ns_individual(void)
+ {
++    #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++    long ret = sys_unshare(CLONE_NEWNS);
++#else
+     long ret = ksys_unshare(CLONE_NEWNS);
++#endif
+     if (ret) {
+         pr_warn("call ksys_unshare failed: %ld\n", ret);
+         return;
+@@ -128,7 +132,15 @@ static void ksu_mnt_ns_individual(void)
+     // make root mount private
+     struct path root_path;
+     get_fs_root(current->fs, &root_path);
++    #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
++    /* The legacy mount API resolves a pathname under the task root. */
++    mm_segment_t old_fs = get_fs();
++    set_fs(KERNEL_DS);
++    int pm_ret = do_mount(NULL, (const char __user *)"/", NULL, MS_PRIVATE | MS_REC, NULL);
++    set_fs(old_fs);
++#else
+     int pm_ret = path_mount(NULL, &root_path, NULL, MS_PRIVATE | MS_REC, NULL);
++#endif
+     path_put(&root_path);
+ 
+     if (pm_ret < 0) {
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
 index 6ee9b39..6910160 100644
 --- a/kernel/runtime/ksud_integration.c
