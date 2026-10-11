@@ -2,7 +2,7 @@ name: Build LOS 23.2 KernelSU Next
 on:
   workflow_dispatch:
   push:
-    branches: [los-23.2-ksun]
+    branches: [los-23.2-ksun-v3.4.1]
 permissions:
   contents: read
 jobs:
@@ -14,6 +14,11 @@ jobs:
         with:
           submodules: true
           fetch-depth: 1
+      - name: Apply v3.4.1 compatibility patch
+        run: |
+          test "$(git -C KernelSU-Next rev-parse HEAD)" = 8f902aeb16033024143ae36cf711df902cf02fae
+          git -C KernelSU-Next apply --check ../integration/ksun-v3.4.1-arm64-4.14.patch
+          git -C KernelSU-Next apply ../integration/ksun-v3.4.1-arm64-4.14.patch
       - name: Install build tools
         run: |
           sudo apt-get update
@@ -25,7 +30,8 @@ jobs:
           scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/oplus.config arch/arm64/configs/vendor/ksun.config
           make O=out ARCH=arm64 CC=clang olddefconfig
           grep -qx CONFIG_KSU=y out/.config
-          grep -qx CONFIG_KSU_MANUAL_HOOK=y out/.config
+          grep -qx CONFIG_KPROBES=y out/.config
+          grep -qx CONFIG_FTRACE_SYSCALLS=y out/.config
       - name: Build kernel
         run: |
           set -o pipefail
