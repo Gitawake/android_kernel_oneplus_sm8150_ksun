@@ -85,7 +85,9 @@ jobs:
           if gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha > tag-sha.txt 2>/dev/null; then
             test "$(cat tag-sha.txt)" = "$sha"
           else
-            gh api "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$sha" > /dev/null
+            gh auth setup-git --hostname github.com
+            git -C source tag "$tag" "$sha"
+            git -C source push origin "refs/tags/$tag"
           fi
           validation='This specific build has NOT been tested on a phone.'
           if test "$BUILD_RUN_ID" = 38128218220; then
