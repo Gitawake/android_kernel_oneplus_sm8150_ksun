@@ -35,7 +35,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive, archive.open('payload.bin') as pay
     manifest = fields(payload.read(length)); data_start = 24 + length + signature_length
     block_size = one(manifest, 3, 4096)
     partitions = [fields(p) for p in manifest[13]]
-    part = next(p for p in partitions if one(p, 1) == b'boot')
+    part = next(p for p in partitions if one(p, 1) == (sys.argv[3].encode() if len(sys.argv) > 3 else b'boot'))
     info = fields(one(part, 7)); size = one(info, 1); expected = one(info, 2)
     output = Path(sys.argv[2])
     if output.exists(): raise FileExistsError(output)
