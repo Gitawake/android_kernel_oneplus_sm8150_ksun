@@ -1,0 +1,96 @@
+name: Publish successful kernel build
+on:
+  workflow_run:
+    workflows: [Build LOS 23.2 KernelSU Next]
+    types: [completed]
+    branches: [los-23.2-ksun-v3.4.1]
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Build LOS 23.2 KernelSU Next run ID
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: release-${{ github.event.workflow_run.id || inputs.build_run_id }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.build_run_id }}
+      BASELINE_TAG: hotdog-los23.2-20260925-ksun-v3.4.1-tested
+    steps:
+      - name: Verify successful build source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" > run.json
+          jq -e --arg repo "$GH_REPO" '.conclusion == "success" and .head_branch == "los-23.2-ksun-v3.4.1" and .path == ".github/workflows/build-ksun.yml" and .head_repository.full_name == $repo' run.json
+          echo "sha=$(jq -r .head_sha run.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+          path: source
+      - name: Download build and verified stock materials
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$BUILD_RUN_ID" --name hotdog-ksun-build --dir build
+          mkdir stock release
+          gh release download "$BASELINE_TAG" --pattern boot-stock-los-23.2-20260925.img --pattern qca_cld3_wlan-stock.ko --dir stock
+          echo '4368d800dcdd85f4601ca197508d6eff5fb50ca4cab36723da9336f79bf2a39c  stock/boot-stock-los-23.2-20260925.img' | sha256sum -c -
+          echo '5bd975c3351c408e1ecec32928e4235feea0a737780b79fbf9411cc49d835036  stock/qca_cld3_wlan-stock.ko' | sha256sum -c -
+          test "$(cat build/artifacts/kernel-commit.txt)" = "$(jq -r .head_sha run.json)"
+          test "$(cat build/artifacts/ksun-commit.txt)" = 8f902aeb16033024143ae36cf711df902cf02fae
+          test -s build/artifacts/Image
+          grep -qx CONFIG_KSU=y build/artifacts/.config
+      - name: Verify WLAN and repack boot
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 source/integration/check_module_abi.py stock/qca_cld3_wlan-stock.ko build/artifacts/Module.symvers > release/wlan-abi.json
+          git init tools
+          git -C tools remote add origin https://android.googlesource.com/platform/system/tools/mkbootimg
+          git -C tools fetch --depth 1 origin d2bb0af5ba6d3198a3e99529c97eda1be0b5a093
+          git -C tools checkout --detach FETCH_HEAD
+          python3 source/integration/repack_los_boot.py --stock stock/boot-stock-los-23.2-20260925.img --kernel build/artifacts/Image --output release/boot-los-23.2-20260925-ksun-v3.4.1.img --tools tools > release/boot-repack-verification.json
+          cp build/artifacts/.config release/kernel.config
+          cp build/artifacts/Module.symvers release/Module.symvers
+          cp build/artifacts/kernel-commit.txt build/artifacts/ksun-commit.txt build/artifacts/toolchain.txt release/
+          tar -czf release/kernel-build.tar.gz -C build artifacts
+          (cd release && sha256sum * > SHA256SUMS)
+      - name: Publish unique prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_attempt=$(jq -r .run_attempt run.json)
+          tag="hotdog-los23.2-ksun-v3.4.1-${BUILD_RUN_ID}-${build_attempt}"
+          sha=$(jq -r .head_sha run.json)
+          cat > notes.md <<EOF
+          OnePlus 7T Pro / hotdog, LOS 23.2-20260925 only, KernelSU Next v3.4.1.
+
+          Automatically published after a successful full kernel build, stock WLAN symbol CRC check, and boot repack verification. This specific build has NOT been tested on a phone. It is an unsigned experimental boot, preserving the pinned stock ramdisk and DTB.
+
+          Charging IRQ warnings also occur on stock LOS; memcg warnings have occurred in the port and remain under investigation. Long-term stability and Warp charging are unverified. Back up and temporarily boot before flashing; verify the actual slot. OTA updates require a matching rebuild and new stock boot materials.
+
+          Download boot-los-23.2-20260925-ksun-v3.4.1.img for temporary boot testing. kernel-build.tar.gz contains raw outputs; Image is not a boot.img. Verify SHA256SUMS.
+
+          Source: $sha
+          Build: https://github.com/$GH_REPO/actions/runs/$BUILD_RUN_ID
+          Tested reference and stock materials: https://github.com/$GH_REPO/releases/tag/$BASELINE_TAG
+          EOF
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "Release already exists: $tag"
+          else
+            gh release create "$tag" release/* --target "$sha" --prerelease --title "hotdog LOS 23.2 / KSU-N v3.4.1 / build $BUILD_RUN_ID.$build_attempt" --notes-file notes.md
+          fi
