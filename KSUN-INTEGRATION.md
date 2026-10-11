@@ -1,6 +1,16 @@
 # LOS 23.2 / hotdog / KernelSU Next v3.4.1 port
 
-Experimental work in progress. Do not flash until boot and WLAN validation complete.
+Validated on hotdog / LOS 23.2-20260925 at build commit
+b0f24a51d23ec2974329a156dcc14878c5e879a8: two temporary boots followed
+by permanent boot_b flashing and two normal boots. Root, SELinux enforcing
+and stock WLAN work. Charging IRQ and memcg warnings remain under investigation;
+long-term stability is not established.
+
+With explicit user authorization, stock vendor_dlkm_b was restored and
+wlan_replace disabled. All 412 stock WLAN symbol CRCs matched the build.
+The official v3.4.1 standard manager is recognized and ksud is 3.4.1 / uapi 5.
+The boot_b readback matches the tested image SHA-256:
+2175cb89dfbae4d36740697f01a0c6d67456717460d093c5a099ee6e8512d868.
 
 Kernel base: LineageOS lineage-23.2, 0521dc291cf10bd754fb5ff385e74875c406d577.
 KernelSU Next: official release v3.4.1, 8f902aeb16033024143ae36cf711df902cf02fae.
@@ -10,10 +20,9 @@ This is a port of the release kernel code, not the legacy branch or a spoofed ve
 The initial adaptation preserves the native six-argument ARM64 syscall ABI used
 by this 4.14 kernel. It adapts the dispatcher, direct boot-time read/fstat hooks,
 original syscall invocation, and reboot kprobe register handling.
-Further API compatibility changes will be driven by compilation and review.
+The full kernel build and final link passed for the tested commit.
 
-Raw Image and matching WLAN modules are experimental outputs; packaging and
-on-device validation are pending. The separate los-23.2-ksun branch is the earlier
+Raw Image requires repacking with the matching stock boot before flashing. The separate los-23.2-ksun branch is the earlier
 legacy reference build and does not satisfy the v3.4.1 target.
 
 ## Compatibility work
@@ -26,7 +35,7 @@ port-owned snapshot instead of casting the older selinux_ss structure, publishes
 under its reader/writer lock, and serializes with native policy loading and boolean
 writes through a mutex. Policy backups own a separate class map. Linux 4.14 flex
 arrays and filename transition tables have dedicated adapters; newer code paths
-are retained. These adaptations still need runtime validation.
+are retained. Root and policy initialization passed on-device; broader runtime testing remains ongoing.
 
 ## Matching stock boot
 
@@ -35,7 +44,7 @@ Its boot SHA-256 is
 4368d800dcdd85f4601ca197508d6eff5fb50ca4cab36723da9336f79bf2a39c.
 Its embedded kernel identifies the same LOS source commit, 0521dc291cf1,
 and Android clang r563880c (21.0.0). Current CI uses Ubuntu clang 18;
-compiler/configuration compatibility remains part of validation.
+stock WLAN CRC checks and on-device loading passed.
 
 `integration/extract_los_boot.py` verifies operation and partition hashes from a
 full OTA payload. `integration/repack_los_boot.py` uses AOSP mkbootimg/unpack_bootimg
@@ -52,7 +61,5 @@ from the phone has a truncated/inconsistent ELF section table, so the reliable
 stock module was extracted from the verified OTA vendor_dlkm image. Its SHA-256
 is 5bd975c3351c408e1ecec32928e4235feea0a737780b79fbf9411cc49d835036.
 `integration/check_module_abi.py` compares its 412 symbol CRCs with Module.symvers.
-Verify whether that stock LOS module remains ABI compatible with the changed
-configuration; provide the matching built module if needed. Existing
-crDroid replacement modules must not be loaded with the LOS build. No device partitions have been
-written during this port.
+All 412 required symbol CRCs matched the successful build. Existing
+crDroid replacement modules must not be loaded with the LOS build. The tested boot and stock vendor_dlkm have been flashed to slot b with user authorization.
