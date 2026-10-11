@@ -429,23 +429,6 @@ index 3d0631a..f53fc9e 100644
      path_put(&root_path);
  
      if (pm_ret < 0) {
-diff --git a/kernel/manager/apk_sign.c b/kernel/manager/apk_sign.c
-index edec5bb..81a7058 100644
---- a/kernel/manager/apk_sign.c
-+++ b/kernel/manager/apk_sign.c
-@@ -16,8 +16,12 @@
- #include <crypto/sha.h>
- #endif
- #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
-+#include <linux/kernel.h>
-+#else
- #include <linux/hex.h>
- #endif
-+#endif
- 
- #include "manager/apk_sign.h"
- #include "uapi/app_profile.h"
 diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
 index 670918f..eb1e312 100644
 --- a/kernel/manager/pkg_observer.c

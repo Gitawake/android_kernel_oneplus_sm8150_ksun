@@ -29,7 +29,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3
+          sudo apt-get install -y clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3 device-tree-compiler
           echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
       - name: Configure kernel
         run: |
@@ -42,14 +42,14 @@ jobs:
       - name: Compile KernelSU port first
         run: |
           set -o pipefail
-          args=(O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-)
+          args=(O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 DTC_EXT=/usr/bin/dtc CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-)
           make -j"$(nproc)" "${args[@]}" prepare scripts
           make -j"$(nproc)" "${args[@]}" security/selinux/
           make -j"$(nproc)" "${args[@]}" drivers/kernelsu/ 2>&1 | tee ksun-build.log
       - name: Build kernel
         run: |
           set -o pipefail
-          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee build.log
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 DTC_EXT=/usr/bin/dtc CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee build.log
       - name: Collect experimental build outputs
         run: |
           mkdir -p artifacts
