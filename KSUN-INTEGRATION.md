@@ -46,7 +46,9 @@ The repacker creates an unsigned image, discards the stale original AVB footer,
 checks partition size, and verifies the repacked components. A stock round trip
 has passed; this does not validate a custom kernel on the device.
 
-WLAN is a loadable qca_cld3_wlan.ko under /vendor_dlkm/lib/modules. Ship and verify
-the module from the same build, together with boot. Existing crDroid replacement
-modules must not be mistaken for LOS modules. No device partitions have been
+WLAN is a loadable qca_cld3_wlan.ko under /vendor_dlkm/lib/modules. The current
+crDroid replacement module uses a late service insmod and leaves the LOS vendor
+module intact. Verify whether that stock LOS module remains ABI compatible with
+the changed configuration; provide the matching built module if needed. Existing
+crDroid replacement modules must not be loaded with the LOS build. No device partitions have been
 written during this port.
