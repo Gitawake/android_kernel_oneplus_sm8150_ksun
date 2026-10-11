@@ -45,7 +45,7 @@ jobs:
           args=(O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 DTC_EXT=/usr/bin/dtc CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-)
           make -j"$(nproc)" "${args[@]}" prepare scripts
           make -j"$(nproc)" "${args[@]}" security/selinux/
-          make -j"$(nproc)" "${args[@]}" drivers/kernelsu/ 2>&1 | tee ksun-build.log
+          make -k -j"$(nproc)" "${args[@]}" drivers/kernelsu/ 2>&1 | tee ksun-build.log
       - name: Build kernel
         run: |
           set -o pipefail
@@ -64,6 +64,7 @@ jobs:
         if: always()
         with:
           name: hotdog-ksun-build
+          include-hidden-files: true
           path: |
             artifacts/
             build.log
