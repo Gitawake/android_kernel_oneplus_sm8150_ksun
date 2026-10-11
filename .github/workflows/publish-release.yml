@@ -80,6 +80,13 @@ jobs:
           build_attempt=$(jq -r .run_attempt run.json)
           tag="hotdog-los23.2-ksun-v3.4.1-${BUILD_RUN_ID}-${build_attempt}"
           sha=$(jq -r .head_sha run.json)
+          # Create the exact source tag first. Release --target can require
+          # workflows:write when the built commit predates workflow changes.
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq .object.sha > tag-sha.txt 2>/dev/null; then
+            test "$(cat tag-sha.txt)" = "$sha"
+          else
+            gh api "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$sha" > /dev/null
+          fi
           validation='This specific build has NOT been tested on a phone.'
           if test "$BUILD_RUN_ID" = 38128218220; then
             validation='This build was tested on hotdog / HD1911: temporary boots, permanent boot_b installation, normal reboots, Root, SELinux enforcing and stock WLAN passed. Longer-term stability remains unverified.'
@@ -105,6 +112,6 @@ jobs:
             fi
             gh release upload "$tag" release/* --clobber
           else
-            gh release create "$tag" release/* --target "$sha" --draft --prerelease --title "hotdog LOS 23.2 / KSU-N v3.4.1 / build $BUILD_RUN_ID.$build_attempt" --notes-file notes.md
+            gh release create "$tag" release/* --verify-tag --draft --prerelease --title "hotdog LOS 23.2 / KSU-N v3.4.1 / build $BUILD_RUN_ID.$build_attempt" --notes-file notes.md
           fi
           gh release edit "$tag" --draft=false
