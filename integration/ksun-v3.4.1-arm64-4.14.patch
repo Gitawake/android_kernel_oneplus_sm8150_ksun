@@ -1,3 +1,15 @@
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+index b9d91f8..9e7225d 100644
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -87,6 +87,7 @@ KSU_KERNEL_DIR := $(src)
+ endif
+ 
+ ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include
++ccflags-y += -include $(KSU_KERNEL_DIR)/include/los_414_compat.h
+ 
+ obj-$(CONFIG_KSU) += kernelsu.o
+ 
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
 index 6dae885..254a6e6 100644
 --- a/kernel/feature/sucompat.c
@@ -195,6 +207,52 @@ index 2851fa5..59ffa1a 100644
 +#endif
  
  #endif
+diff --git a/kernel/include/los_414_compat.h b/kernel/include/los_414_compat.h
+new file mode 100644
+index 0000000..0997bf2
+--- /dev/null
++++ b/kernel/include/los_414_compat.h
+@@ -0,0 +1,15 @@
++#ifndef KSU_LOS_414_COMPAT_H
++#define KSU_LOS_414_COMPAT_H
++#include <linux/version.h>
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++#include <linux/uaccess.h>
++#include <linux/task_work.h>
++/* This LOS tree has the pre-5.7 bool task_work notification API. */
++#define TWA_RESUME true
++/* These helpers were renamed in upstream 5.8; preserve nofault semantics. */
++#define copy_from_user_nofault probe_user_read
++#define copy_to_user_nofault probe_user_write
++#define copy_from_kernel_nofault probe_kernel_read
++#define copy_to_kernel_nofault probe_kernel_write
++#endif
++#endif
+diff --git a/kernel/infra/seccomp_cache.c b/kernel/infra/seccomp_cache.c
+index 6511066..1d118dd 100644
+--- a/kernel/infra/seccomp_cache.c
++++ b/kernel/infra/seccomp_cache.c
+@@ -8,6 +8,12 @@
+ #include "klog.h" // IWYU pragma: keep
+ #include "infra/seccomp_cache.h"
+ 
++/* seccomp action caching was introduced in 5.11. This 4.14 tree always
++ * evaluates filters, so there is no cache state to update or reinterpret. */
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
++void ksu_seccomp_clear_cache(struct seccomp_filter *filter, int nr) { }
++void ksu_seccomp_allow_cache(struct seccomp_filter *filter, int nr) { }
++#else
+ struct action_cache {
+ 	DECLARE_BITMAP(allow_native, SECCOMP_ARCH_NATIVE_NR);
+ #ifdef SECCOMP_ARCH_COMPAT
+@@ -62,4 +68,5 @@ void ksu_seccomp_allow_cache(struct seccomp_filter *filter, int nr)
+         set_bit(nr, filter->cache.allow_compat);
+     }
+ #endif
+-}
+\ No newline at end of file
++}
++#endif
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
 index 6ee9b39..6910160 100644
 --- a/kernel/runtime/ksud_integration.c
