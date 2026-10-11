@@ -1,0 +1,238 @@
+diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+index 6dae885..254a6e6 100644
+--- a/kernel/feature/sucompat.c
++++ b/kernel/feature/sucompat.c
+@@ -111,7 +111,7 @@ long ksu_handle_faccessat_sucompat(int orig_nr, struct pt_regs *regs)
+ 			pr_info("faccessat su->ksud!\n");
+ 			orig_filename = *filename_user;
+ 			*filename_user = ksud_user_path();
+-			ret = ksu_syscall_table[orig_nr](regs);
++			ret = ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ 			revert_creds(old_cred);
+ 			*filename_user = orig_filename;
+ 			return ret;
+@@ -121,7 +121,7 @@ long ksu_handle_faccessat_sucompat(int orig_nr, struct pt_regs *regs)
+ 	}
+ 
+ do_orig_facessat:
+-	return ksu_syscall_table[orig_nr](regs);
++	return ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ }
+ 
+ long ksu_handle_stat_sucompat(int orig_nr, struct pt_regs *regs)
+@@ -147,7 +147,7 @@ long ksu_handle_stat_sucompat(int orig_nr, struct pt_regs *regs)
+ 			pr_info("newfstatat su->ksud!\n");
+ 			orig_filename = *filename_user;
+ 			*filename_user = ksud_user_path();
+-			ret = ksu_syscall_table[orig_nr](regs);
++			ret = ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ 			revert_creds(old_cred);
+ 			*filename_user = orig_filename;
+ 			return ret;
+@@ -157,7 +157,7 @@ long ksu_handle_stat_sucompat(int orig_nr, struct pt_regs *regs)
+ 	}
+ 
+ do_orig_stat:
+-	return ksu_syscall_table[orig_nr](regs);
++	return ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ }
+ 
+ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
+@@ -236,7 +236,7 @@ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
+ 	}
+ 	ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
+ 
+-	ret = ksu_syscall_table[__NR_execveat](regs);
++	ret = ksu_invoke_syscall(ksu_syscall_table[__NR_execveat], regs);
+ 	if (ret < 0) {
+ 		ksu_close_fd(tmp_fd);
+ 		PT_REGS_SYSCALL_PARM1(regs) = orig_regs[0];
+@@ -255,7 +255,7 @@ static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
+ 	return ret;
+ 
+ do_orig_execve:
+-	return ksu_syscall_table[orig_nr](regs);
++	return ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ }
+ 
+ long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
+diff --git a/kernel/hook/arm64/syscall_hook.c b/kernel/hook/arm64/syscall_hook.c
+index 7bd6df0..50e98c5 100644
+--- a/kernel/hook/arm64/syscall_hook.c
++++ b/kernel/hook/arm64/syscall_hook.c
+@@ -125,7 +125,13 @@ static int __init ksu_find_ni_syscall_slots(int *out_slots, int max_slots)
+     if (!ksu_syscall_table || max_slots <= 0)
+         return 0;
+ 
+-    ni_syscall = (unsigned long)ksu_resolve_symbol_for_functable_hook("__arm64_sys_ni_syscall");
++    ni_syscall = (unsigned long)ksu_resolve_symbol_for_functable_hook(
++#ifdef KSU_NATIVE_ARM64_SYSCALL
++        "sys_ni_syscall"
++#else
++        "__arm64_sys_ni_syscall"
++#endif
++);
+ 
+     pr_info("sys_ni_syscall: 0x%lx\n", ni_syscall);
+ 
+@@ -145,8 +151,9 @@ static int __init ksu_find_ni_syscall_slots(int *out_slots, int max_slots)
+ // Unified dispatcher: reads original NR from x8/orig_ax, dispatches to handler.
+ // Validates that syscallno matches our dispatcher slot (i.e. we redirected it),
+ // otherwise it's a spurious call — return -ENOSYS.
+-static long __nocfi ksu_syscall_dispatcher(const struct pt_regs *regs)
++static long __nocfi ksu_syscall_dispatcher(KSU_SYSCALL_ENTRY_ARGS)
+ {
++    KSU_SYSCALL_ENTRY_REGS;
+     if (regs->syscallno != ksu_dispatcher_nr)
+         return -ENOSYS;
+ 
+diff --git a/kernel/hook/syscall_event_bridge.c b/kernel/hook/syscall_event_bridge.c
+index 9d2977f..49c632d 100644
+--- a/kernel/hook/syscall_event_bridge.c
++++ b/kernel/hook/syscall_event_bridge.c
+@@ -51,7 +51,7 @@ static int ksu_handle_init_mark_tracker(const char __user **filename_user)
+ long __nocfi ksu_hook_newfstatat(int orig_nr, const struct pt_regs *regs)
+ {
+     if (!ksu_su_compat_enabled)
+-        return ksu_syscall_table[orig_nr](regs);
++        return ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ 
+     return ksu_handle_stat_sucompat(orig_nr, (struct pt_regs *)regs);
+ }
+@@ -59,7 +59,7 @@ long __nocfi ksu_hook_newfstatat(int orig_nr, const struct pt_regs *regs)
+ long __nocfi ksu_hook_faccessat(int orig_nr, const struct pt_regs *regs)
+ {
+     if (!ksu_su_compat_enabled)
+-        return ksu_syscall_table[orig_nr](regs);
++        return ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ 
+     return ksu_handle_faccessat_sucompat(orig_nr, (struct pt_regs *)regs);
+ }
+@@ -106,7 +106,7 @@ static long __nocfi ksu_hook_execve_common(int orig_nr, const struct pt_regs *re
+         return ret;
+     }
+ 
+-    ret = ksu_syscall_table[orig_nr](regs);
++    ret = ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+     ksu_sulog_emit_pending(pending_root_execve, ret, GFP_KERNEL);
+     return ret;
+ }
+@@ -124,7 +124,7 @@ long __nocfi ksu_hook_execveat(int orig_nr, const struct pt_regs *regs)
+ long __nocfi ksu_hook_setresuid(int orig_nr, const struct pt_regs *regs)
+ {
+     uid_t old_uid = current_uid().val;
+-    long ret = ksu_syscall_table[orig_nr](regs);
++    long ret = ksu_invoke_syscall(ksu_syscall_table[orig_nr], regs);
+ 
+     if (ret < 0)
+         return ret;
+diff --git a/kernel/hook/syscall_hook.h b/kernel/hook/syscall_hook.h
+index d4921bf..46c0d12 100644
+--- a/kernel/hook/syscall_hook.h
++++ b/kernel/hook/syscall_hook.h
+@@ -1,6 +1,19 @@
+ #ifndef __KSU_H_KSU_SYSCALL_HOOK
+ #define __KSU_H_KSU_SYSCALL_HOOK
+ #include <asm/syscall.h>
++#include <linux/version.h>
++#include <linux/sched.h>
++
++#if defined(__aarch64__) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++#define KSU_NATIVE_ARM64_SYSCALL 1
++typedef long (*syscall_fn_t)(unsigned long, unsigned long, unsigned long,
++                             unsigned long, unsigned long, unsigned long);
++#define KSU_SYSCALL_ENTRY_ARGS unsigned long a0, unsigned long a1, unsigned long a2, unsigned long a3, unsigned long a4, unsigned long a5
++#define KSU_SYSCALL_ENTRY_REGS const struct pt_regs *regs = task_pt_regs(current)
++#else
++#define KSU_SYSCALL_ENTRY_ARGS const struct pt_regs *regs
++#define KSU_SYSCALL_ENTRY_REGS
++#endif
+ 
+ #if defined(__x86_64__)
+ typedef sys_call_ptr_t syscall_fn_t;
+@@ -8,6 +21,16 @@ typedef sys_call_ptr_t syscall_fn_t;
+ typedef long (*syscall_fn_t)(const struct pt_regs *);
+ #endif
+ 
++static inline long ksu_invoke_syscall(syscall_fn_t fn, const struct pt_regs *regs)
++{
++#ifdef KSU_NATIVE_ARM64_SYSCALL
++    return fn(regs->regs[0], regs->regs[1], regs->regs[2],
++              regs->regs[3], regs->regs[4], regs->regs[5]);
++#else
++    return fn(regs);
++#endif
++}
++
+ extern syscall_fn_t *ksu_syscall_table;
+ 
+ // Dispatcher slot number in syscall table
+diff --git a/kernel/include/arch.h b/kernel/include/arch.h
+index 2851fa5..59ffa1a 100644
+--- a/kernel/include/arch.h
++++ b/kernel/include/arch.h
+@@ -19,7 +19,11 @@
+ #define __PT_IP_REG pc
+ #define __PT_ORIG_SYSCALL_REG regs[8]
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++#define REBOOT_SYMBOL "sys_reboot"
++#else
+ #define REBOOT_SYMBOL "__arm64_sys_reboot"
++#endif
+ #define SYS_READ_SYMBOL "__arm64_sys_read"
+ #define SYS_EXECVE_SYMBOL "__arm64_sys_execve"
+ // https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/scripts/syscalltbl.sh;l=57;drc=9142be9e6443fd641ca37f820efe00d9cd890eb1
+@@ -99,6 +103,11 @@
+ #define PT_REGS_IP(x) (__PT_REGS_CAST(x)->__PT_IP_REG)
+ #define PT_REGS_ORIG_SYSCALL(x) (__PT_REGS_CAST(x)->__PT_ORIG_SYSCALL_REG)
+ 
++#if defined(__aarch64__) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
++/* Native 4.14 syscall kprobes receive C arguments, not a pt_regs pointer. */
++#define PT_REAL_REGS(regs) task_pt_regs(current)
++#else
+ #define PT_REAL_REGS(regs) ((struct pt_regs *)PT_REGS_PARM1(regs))
++#endif
+ 
+ #endif
+diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
+index 6ee9b39..6910160 100644
+--- a/kernel/runtime/ksud_integration.c
++++ b/kernel/runtime/ksud_integration.c
+@@ -559,20 +559,22 @@ void ksu_execveat_hook_ksud(const struct pt_regs *regs)
+     ksu_execve_hook_ksud_common(filename_user, argv_user);
+ }
+ 
+-static long (*orig_sys_read)(const struct pt_regs *regs);
+-static long ksu_sys_read(const struct pt_regs *regs)
++static syscall_fn_t orig_sys_read;
++static long ksu_sys_read(KSU_SYSCALL_ENTRY_ARGS)
+ {
++    KSU_SYSCALL_ENTRY_REGS;
+     unsigned int fd = PT_REGS_SYSCALL_PARM1(regs);
+     char __user **buf_ptr = (char __user **)&PT_REGS_PARM2(regs);
+     size_t *count_ptr = (size_t *)&PT_REGS_PARM3(regs);
+ 
+     ksu_handle_sys_read(fd, buf_ptr, count_ptr);
+-    return orig_sys_read(regs);
++    return ksu_invoke_syscall(orig_sys_read, regs);
+ }
+ 
+-static long (*orig_sys_fstat)(const struct pt_regs *regs);
+-static long ksu_sys_fstat(const struct pt_regs *regs)
++static syscall_fn_t orig_sys_fstat;
++static long ksu_sys_fstat(KSU_SYSCALL_ENTRY_ARGS)
+ {
++    KSU_SYSCALL_ENTRY_REGS;
+     unsigned int fd = PT_REGS_SYSCALL_PARM1(regs);
+     void __user *statbuf = (void __user *)PT_REGS_PARM2(regs);
+     bool is_rc = false;
+@@ -588,7 +590,7 @@ static long ksu_sys_fstat(const struct pt_regs *regs)
+         fput(file);
+     }
+ 
+-    ret = orig_sys_fstat(regs);
++    ret = ksu_invoke_syscall(orig_sys_fstat, regs);
+ 
+     if (is_rc) {
+         void __user *st_size_ptr = statbuf + offsetof(struct stat, st_size);
