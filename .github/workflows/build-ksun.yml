@@ -1,0 +1,51 @@
+name: Build LOS 23.2 KernelSU Next
+on:
+  workflow_dispatch:
+  push:
+    branches: [los-23.2-ksun]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi make bc bison flex libssl-dev libelf-dev python3
+          echo /usr/lib/llvm-18/bin >> "$GITHUB_PATH"
+      - name: Configure kernel
+        run: |
+          make O=out ARCH=arm64 vendor/sm8150-perf_defconfig
+          scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/oplus.config arch/arm64/configs/vendor/ksun.config
+          make O=out ARCH=arm64 CC=clang olddefconfig
+          grep -qx CONFIG_KSU=y out/.config
+          grep -qx CONFIG_KSU_MANUAL_HOOK=y out/.config
+      - name: Build kernel
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- 2>&1 | tee build.log
+      - name: Collect experimental build outputs
+        run: |
+          mkdir -p artifacts
+          cp out/arch/arm64/boot/Image out/.config out/Module.symvers artifacts/
+          find out/arch/arm64/boot/dts -name '*.dtb' -exec cp --parents '{}' artifacts/ \;
+          find out -name '*.ko' -exec cp --parents '{}' artifacts/ \;
+          git rev-parse HEAD > artifacts/kernel-commit.txt
+          git -C KernelSU-Next rev-parse HEAD > artifacts/ksun-commit.txt
+          clang --version > artifacts/toolchain.txt
+          echo 'EXPERIMENTAL: raw build outputs, not a flashable package. Device testing and matching WLAN modules are required.' > artifacts/STATUS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hotdog-ksun-build
+          path: |
+            artifacts/
+            build.log
+            out/.config
+          if-no-files-found: warn
