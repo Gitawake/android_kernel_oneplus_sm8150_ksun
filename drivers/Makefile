@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the Linux kernel device drivers.
+obj-$(CONFIG_KSU) += kernelsu/
 #
 # 15 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
