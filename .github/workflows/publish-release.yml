@@ -25,7 +25,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.build_run_id }}
-      BASELINE_TAG: hotdog-los23.2-20260925-ksun-v3.4.1-tested
     steps:
       - name: Verify successful build source
         id: source
@@ -41,13 +40,18 @@ jobs:
           ref: ${{ steps.source.outputs.sha }}
           persist-credentials: false
           path: source
+      - uses: actions/checkout@v4
+        with:
+          ref: fe57997ba9d16cda0632c559abd5753bc061ca81
+          persist-credentials: false
+          path: stock
       - name: Download build and verified stock materials
         shell: bash
         run: |
           set -euo pipefail
           gh run download "$BUILD_RUN_ID" --name hotdog-ksun-build --dir build
-          mkdir stock release
-          gh release download "$BASELINE_TAG" --pattern boot-stock-los-23.2-20260925.img --pattern qca_cld3_wlan-stock.ko --dir stock
+          mkdir release
+          gzip -d stock/boot-stock-los-23.2-20260925.img.gz stock/qca_cld3_wlan-stock.ko.gz
           echo '4368d800dcdd85f4601ca197508d6eff5fb50ca4cab36723da9336f79bf2a39c  stock/boot-stock-los-23.2-20260925.img' | sha256sum -c -
           echo '5bd975c3351c408e1ecec32928e4235feea0a737780b79fbf9411cc49d835036  stock/qca_cld3_wlan-stock.ko' | sha256sum -c -
           test "$(cat build/artifacts/kernel-commit.txt)" = "$(jq -r .head_sha run.json)"
@@ -76,10 +80,14 @@ jobs:
           build_attempt=$(jq -r .run_attempt run.json)
           tag="hotdog-los23.2-ksun-v3.4.1-${BUILD_RUN_ID}-${build_attempt}"
           sha=$(jq -r .head_sha run.json)
+          validation='This specific build has NOT been tested on a phone.'
+          if test "$BUILD_RUN_ID" = 38128218220; then
+            validation='This build was tested on hotdog / HD1911: temporary boots, permanent boot_b installation, normal reboots, Root, SELinux enforcing and stock WLAN passed. Longer-term stability remains unverified.'
+          fi
           cat > notes.md <<EOF
           OnePlus 7T Pro / hotdog, LOS 23.2-20260925 only, KernelSU Next v3.4.1.
 
-          Automatically published after a successful full kernel build, stock WLAN symbol CRC check, and boot repack verification. This specific build has NOT been tested on a phone. It is an unsigned experimental boot, preserving the pinned stock ramdisk and DTB.
+          Automatically published after a successful full kernel build, stock WLAN symbol CRC check, and boot repack verification. $validation It is an unsigned experimental boot, preserving the pinned stock ramdisk and DTB.
 
           Charging IRQ warnings also occur on stock LOS; memcg warnings have occurred in the port and remain under investigation. Long-term stability and Warp charging are unverified. Back up and temporarily boot before flashing; verify the actual slot. OTA updates require a matching rebuild and new stock boot materials.
 
@@ -87,7 +95,8 @@ jobs:
 
           Source: $sha
           Build: https://github.com/$GH_REPO/actions/runs/$BUILD_RUN_ID
-          Tested reference and stock materials: https://github.com/$GH_REPO/releases/tag/$BASELINE_TAG
+          Tested reference build: https://github.com/$GH_REPO/actions/runs/38128218220
+          Pinned stock materials: https://github.com/$GH_REPO/tree/fe57997ba9d16cda0632c559abd5753bc061ca81
           EOF
           if gh release view "$tag" > /dev/null 2>&1; then
             echo "Release already exists: $tag"
