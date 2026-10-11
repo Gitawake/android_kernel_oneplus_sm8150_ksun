@@ -900,19 +900,20 @@ index 5b5c170..c506d4c 100644
      kvfree(payload);
  
 diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
-index 1e8ebb3..7561127 100644
+index 1e8ebb3..254ed6f 100644
 --- a/kernel/selinux/sepolicy.c
 +++ b/kernel/selinux/sepolicy.c
-@@ -177,14 +177,23 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
+@@ -177,14 +177,24 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
  
      for (i = 0; i < db->te_avtab.nslot; i++) {
          prev = NULL;
 -        for (n = db->te_avtab.htable[i]; n; prev = n, n = n->next) {
-+        #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
 +        for (n = flex_array_get_ptr(db->te_avtab.htable, i); n; prev = n, n = n->next)
 +#else
 +        for (n = db->te_avtab.htable[i]; n; prev = n, n = n->next)
-+#endif {
++#endif
++        {
              if (n != node)
                  continue;
  
@@ -929,7 +930,7 @@ index 1e8ebb3..7561127 100644
  
              if (db->te_avtab.nel > 0)
                  db->te_avtab.nel--;
-@@ -197,7 +206,11 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
+@@ -197,7 +207,11 @@ static bool remove_avtab_node(struct policydb *db, struct avtab_node *node)
                  // data is u32
                  shrink_size += sizeof(n->datum.u.data);
              n->next = NULL;
@@ -941,7 +942,7 @@ index 1e8ebb3..7561127 100644
              removed.nel = 1;
              avtab_destroy(&removed);
              if (db->len >= shrink_size)
-@@ -566,7 +579,11 @@ static bool add_filename_trans(struct policydb *db, const char *s,
+@@ -566,7 +580,11 @@ static bool add_filename_trans(struct policydb *db, const char *s,
  {
      struct type_datum *src, *tgt, *def;
      struct class_datum *cls;
@@ -953,7 +954,7 @@ index 1e8ebb3..7561127 100644
      int rc;
  
      src = symtab_search(&db->p_types, s);
-@@ -590,6 +607,7 @@ static bool add_filename_trans(struct policydb *db, const char *s,
+@@ -590,6 +608,7 @@ static bool add_filename_trans(struct policydb *db, const char *s,
          return false;
      }
  
@@ -961,7 +962,7 @@ index 1e8ebb3..7561127 100644
      struct filename_trans_key key;
      key.ttype = tgt->value;
      key.tclass = cls->value;
-@@ -648,6 +666,35 @@ free_trans:
+@@ -648,6 +667,35 @@ free_trans:
      kfree(trans);
  out:
      return false;
@@ -997,7 +998,7 @@ index 1e8ebb3..7561127 100644
  }
  
  static bool add_genfscon(struct policydb *db, const char *fs_name,
-@@ -684,8 +731,75 @@ void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize,
+@@ -684,8 +732,77 @@ void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize,
      ksu_kvrealloc_compat(p, old_size, new_size, GFP_KERNEL)
  #endif
  
@@ -1027,8 +1028,10 @@ index 1e8ebb3..7561127 100644
 +  void *elem = flex_array_get(db->type_attr_map_array, i);
 +  if (elem)
 +   flex_array_put(maps, i, elem, GFP_KERNEL);
-+  flex_array_put_ptr(types, i, flex_array_get_ptr(db->type_val_to_struct_array, i), GFP_KERNEL);
-+  flex_array_put_ptr(names, i, flex_array_get_ptr(db->sym_val_to_name[SYM_TYPES], i), GFP_KERNEL);
++  elem = flex_array_get_ptr(db->type_val_to_struct_array, i);
++  flex_array_put_ptr(types, i, elem, GFP_KERNEL);
++  elem = flex_array_get_ptr(db->sym_val_to_name[SYM_TYPES], i);
++  flex_array_put_ptr(names, i, elem, GFP_KERNEL);
 + }
 + ebitmap_init(&initial);
 + ret = ebitmap_set_bit(&initial, count, 1);
@@ -1073,7 +1076,7 @@ index 1e8ebb3..7561127 100644
      struct type_datum *type = symtab_search(&db->p_types, type_name);
      if (type) {
          pr_warn("Type %s already exists\n", type_name);
-@@ -757,6 +871,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+@@ -757,6 +874,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
      }
  
      return true;
@@ -1081,7 +1084,7 @@ index 1e8ebb3..7561127 100644
  }
  
  static bool set_type_state(struct policydb *db, const char *type_name,
-@@ -788,7 +903,11 @@ static bool set_type_state(struct policydb *db, const char *type_name,
+@@ -788,7 +906,11 @@ static bool set_type_state(struct policydb *db, const char *type_name,
  static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
                                    struct type_datum *attr)
  {
@@ -1093,7 +1096,7 @@ index 1e8ebb3..7561127 100644
      ebitmap_set_bit(sattr, attr->value - 1, 1);
  
      struct hashtab_node *node;
-@@ -946,6 +1065,10 @@ bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path,
+@@ -946,6 +1068,10 @@ bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path,
  
  void ksu_destroy_sepolicy(struct selinux_policy *pol)
  {
@@ -1104,7 +1107,7 @@ index 1e8ebb3..7561127 100644
      policydb_destroy(&pol->policydb);
      kfree(pol);
  }
-@@ -1018,6 +1141,17 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
+@@ -1018,6 +1144,17 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
          pr_err("sepolicy: policydb_read: %d\n", ret);
          goto out_free_policydb;
      }
