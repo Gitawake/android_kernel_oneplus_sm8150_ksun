@@ -1,0 +1,11 @@
+{
+  "device": "hotdog",
+  "lineage_version": "24.0-20261016-NIGHTLY-hotdog",
+  "kernel_base": "0521dc291cf10bd754fb5ff385e74875c406d577",
+  "ksun_tag": "v3.4.2",
+  "ksun_commit": "4c706b5938665866ebe16944a481a7b91e3396af",
+  "manifest_sha256": "e2a0d906a65758faa2319f3d44d0011896756291046a631fe3ecef0d9119a10c",
+  "ota_sha256": "5f8fd37e49224439b81405db9eefbc8ec271005b07a578961c0bb295d0d2302f",
+  "stock_boot_sha256": "a2d6b2a9b859e436d7dd239f1f5088698cd25305588f01a04363b16966af8277",
+  "validation": "Pending full compile, stock WLAN ABI check, repack verification and phone testing"
+}

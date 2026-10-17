@@ -1,8 +1,8 @@
-name: Build LOS 23.2 KernelSU Next
+name: Build LOS 24.0 KernelSU Next
 on:
   workflow_dispatch:
   push:
-    branches: [los-23.2-ksun-v3.4.1]
+    branches: [los-24.0-20261016-ksun-v3.4.2]
 concurrency:
   group: ksun-${{ github.ref }}
   cancel-in-progress: true
@@ -17,15 +17,15 @@ jobs:
         with:
           submodules: true
           fetch-depth: 1
-      - name: Apply v3.4.1 compatibility patch
+      - name: Apply v3.4.2 compatibility patch
         run: |
           if test "$(git -C KernelSU-Next rev-parse --is-shallow-repository)" = true; then
             git -C KernelSU-Next fetch --unshallow --tags origin
           fi
-          test "$(git -C KernelSU-Next describe --tags --exact-match HEAD)" = v3.4.1
-          test "$(git -C KernelSU-Next rev-parse HEAD)" = 8f902aeb16033024143ae36cf711df902cf02fae
-          git -C KernelSU-Next apply --check ../integration/ksun-v3.4.1-arm64-4.14.patch
-          git -C KernelSU-Next apply ../integration/ksun-v3.4.1-arm64-4.14.patch
+          test "$(git -C KernelSU-Next describe --tags --exact-match HEAD)" = v3.4.2
+          test "$(git -C KernelSU-Next rev-parse HEAD)" = 4c706b5938665866ebe16944a481a7b91e3396af
+          git -C KernelSU-Next apply --check ../integration/ksun-v3.4.2-arm64-4.14.patch
+          git -C KernelSU-Next apply ../integration/ksun-v3.4.2-arm64-4.14.patch
       - name: Install build tools
         run: |
           sudo apt-get update
