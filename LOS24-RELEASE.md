@@ -42,8 +42,15 @@ directory with restricted permissions. They are not included in Git or release
 files. Keep them backed up for future packages. Full ROM binaries are local
 artifacts, not source files in this repository.
 
-Static compilation, WLAN CRC checks, filesystem checks and OTA/AVB verification
-are distinct from phone testing. The connected LOS 23 phone was inspected only;
-the new OTA and bootstrap module have not been installed or boot-tested.
-Existing third-party Zygisk/integrity modules require separate Android 17
-validation. The old charging IRQ / memcg warnings remain unresolved.
+On 2026-10-17, hotdog / HD1911 was upgraded using the official recovery guide:
+official LOS 24.0-20261016, then MindTheGapps 17 before the first Android boot.
+The v3.4.2 kernel passed temporary boot testing, was flashed to the verified
+current boot_a, and passed a normal reboot plus boot-image prefix readback.
+Root, kernel interface 33355, manager/ksud 3.4.2, SELinux enforcing and a real
+Wi-Fi connection with the stock WLAN module passed. Gboard remained the default.
+
+This does not validate the custom complete OTA or native-updater upgrade path;
+that package remains statically verified only. Third-party modules and the old
+updater bootstrap remain disabled. The known stock charging IRQ warning is still
+present; long-term stability, Warp charging and the old memcg issue remain
+unresolved. Private backups and raw logs are local only, never uploaded here.
