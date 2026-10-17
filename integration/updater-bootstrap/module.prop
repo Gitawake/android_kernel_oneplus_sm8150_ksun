@@ -1,0 +1,6 @@
+id=hotdog_los24_updater_bootstrap
+name=Hotdog LOS 23 to 24 native updater preparation
+version=20261016-ksun342
+versionCode=20261016
+author=Gitawake
+description=Adds the custom OTA signing certificate and enables LOS major upgrades. Installs no ROM; use Settings > System > Updater > Local update after reboot.
